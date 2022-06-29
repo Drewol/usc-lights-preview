@@ -10,8 +10,8 @@ int Init(void(*)(char*));
 int Close();
 */
 use macroquad::prelude::*;
-static LOG: OnceCell<extern "C" fn(c: *const u8)> = OnceCell::new();
-static SENDER: OnceCell<Mutex<Sender<UpdateLights>>> = OnceCell::new();
+static mut LOG: OnceCell<extern "C" fn(c: *const u8)> = OnceCell::new();
+static mut SENDER: OnceCell<Mutex<Sender<UpdateLights>>> = OnceCell::new();
 
 #[no_mangle]
 pub extern "C" fn GetName() -> *const u8 {
@@ -19,18 +19,16 @@ pub extern "C" fn GetName() -> *const u8 {
 }
 
 #[no_mangle]
-pub extern "C" fn SetButtons(bitfield: u32) {
+pub unsafe extern "C" fn SetButtons(bitfield: u32) {
     if let Some(Ok(sender)) = SENDER.get().map(|s| s.try_lock()) {
         if let Err(update) = sender.send(UpdateLights::Buttons(bitfield)) {
-            unsafe {
-                LOG.get_unchecked()(format!("{:?}", update).as_ptr());
-            }
+            LOG.get_unchecked()(format!("{:?}", update).as_ptr());
         }
     }
 }
 
 #[no_mangle]
-pub extern "C" fn SetLights(left: u8, pos: u32, r: u8, g: u8, b: u8) {
+pub unsafe extern "C" fn SetLights(left: u8, pos: u32, r: u8, g: u8, b: u8) {
     if let Some(Ok(sender)) = SENDER.get().map(|s| s.try_lock()) {
         let update_msg = if left == 1 {
             UpdateLights::Left(Color::from_rgba(r, g, b, 255), pos as usize)
@@ -39,30 +37,24 @@ pub extern "C" fn SetLights(left: u8, pos: u32, r: u8, g: u8, b: u8) {
         };
 
         if let Err(update) = sender.send(update_msg) {
-            unsafe {
-                LOG.get_unchecked()(format!("{:?}", update).as_ptr());
-            }
+            LOG.get_unchecked()(format!("{:?}", update).as_ptr());
         }
     }
 }
 
 #[no_mangle]
-pub extern "C" fn Tick(_delta_time: f32) {
+pub unsafe extern "C" fn Tick(_delta_time: f32) {
     if let Some(Ok(sender)) = SENDER.get().map(|s| s.try_lock()) {
         if let Err(update) = sender.send(UpdateLights::NextFrame) {
-            unsafe {
-                LOG.get_unchecked()(format!("{:?}", update).as_ptr());
-            }
+            LOG.get_unchecked()(format!("{:?}", update).as_ptr());
         }
     }
 }
 #[no_mangle]
-pub extern "C" fn Close() {
+pub unsafe extern "C" fn Close() {
     if let Some(Ok(sender)) = SENDER.get().map(|s| s.try_lock()) {
         if let Err(update) = sender.send(UpdateLights::Quit) {
-            unsafe {
-                LOG.get_unchecked()(format!("{:?}", update).as_ptr());
-            }
+            LOG.get_unchecked()(format!("{:?}", update).as_ptr());
         }
     }
 }
@@ -168,12 +160,15 @@ async fn render(mut ctx: LightTester) {
 }
 
 #[no_mangle]
-pub extern "C" fn Init(log: extern "C" fn(c: *const u8)) -> i32 {
+pub unsafe extern "C" fn Init(log: extern "C" fn(c: *const u8)) -> i32 {
     std::panic::set_hook(Box::new(|e| {
         if let Some(log) = LOG.get() {
             log(e.to_string().as_ptr());
         }
     }));
+
+    LOG.take();
+    SENDER.take();
 
     if LOG.set(log).is_err() {
         return 1;
