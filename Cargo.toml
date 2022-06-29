@@ -8,5 +8,5 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-macroquad = "0.3.8"
+macroquad = { version = "0.3.8", default-features = false }
 once_cell = "1.12.0"
